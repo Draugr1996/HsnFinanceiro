@@ -57,6 +57,36 @@ function show(){
     finally{identify.disabled=false;}
   };
   card.append(identify);
+  const testSection=document.createElement('div');
+  testSection.style.cssText='margin-top:1rem;padding:1rem;border:1px solid var(--border, #546073);border-radius:12px;';
+  const testHeading=document.createElement('h3');testHeading.textContent='Teste controlado de envio';testSection.append(testHeading);
+  const testInfo=document.createElement('p');testInfo.textContent='Envia somente uma mensagem de teste para faturamento@hotelserranegra.com.br. Não utiliza boletos nem envia mensagens a clientes.';testSection.append(testInfo);
+  const testButton=document.createElement('button');testButton.type='button';testButton.className='secondary';testButton.textContent='Enviar e-mail de teste';
+  testButton.onclick=async()=>{
+    const recipient='faturamento@hotelserranegra.com.br';
+    if(!confirm('TESTE ZOHO MAIL\n\nDestinatário: '+recipient+'\nAssunto: TESTE DE ENVIO - NÃO É COBRANÇA\n\nDeseja continuar?'))return;
+    if(!confirm('CONFIRMAÇÃO FINAL\n\nSerá enviado UM e-mail real para '+recipient+'.\nNenhum cliente receberá esta mensagem.\n\nConfirmar envio agora?'))return;
+    testButton.disabled=true;status.textContent='Enviando mensagem de teste ao Zoho Mail…';
+    try{
+      const client=root.HSN_ZOHO_CLIENT;
+      if(!client)throw Error('Supabase indisponível. Faça login novamente.');
+      const {data:sessionData,error:sessionError}=await client.auth.getSession();
+      if(sessionError||!sessionData.session?.access_token)throw Error('Sessão expirada. Faça login novamente.');
+      const {data,error}=await client.functions.invoke('zoho-mail-test',{
+        method:'POST',headers:{Authorization:'Bearer '+sessionData.session.access_token},
+        body:{confirm:'ENVIAR_TESTE'}
+      });
+      if(error){
+        let detail='';
+        try{if(error.context?.json){const result=await error.context.json();detail=result?.error||'';}}catch(_){}
+        throw Error(detail||error.message||'Erro ao chamar a função de teste.');
+      }
+      if(!data?.success)throw Error(data?.error||'O Zoho não confirmou o envio.');
+      status.textContent='Zoho aceitou o e-mail de teste para '+recipient+'. Confira a caixa de entrada. Nenhum boleto foi alterado.';
+    }catch(error){status.textContent='Teste não confirmado: '+(error?.message||'Erro desconhecido')+'. Se houver dúvida sobre o resultado, verifique a caixa de entrada e os logs antes de repetir.';}
+    finally{testButton.disabled=false;}
+  };
+  testSection.append(testButton);card.append(testSection);
   const note=document.createElement('p');note.className='muted';note.textContent='Nenhuma cobrança será enviada sem a etapa posterior de revisão e confirmação.';card.append(note);
   wrap.append(card);
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='zoho_connect'));

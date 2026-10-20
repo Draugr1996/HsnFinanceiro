@@ -1,0 +1,29 @@
+FINANCEIRO HSN — REFORMULAÇÃO VISUAL PREMIUM
+
+Esta atualização é exclusivamente visual.
+
+NOVO
+- Estilo empresarial premium, claro e escuro.
+- Menu lateral recolhível no computador (preferência salva somente neste navegador).
+- Módulos e subcategorias preservados.
+- Cartões, indicadores, formulários, tabelas e diálogos compactos.
+- Cobranças Sicoob mantidas em cartões com Para, CC e Número do Documento.
+- Layout responsivo para computador e celular.
+- Animações discretas, com respeito à preferência de movimento reduzido.
+
+SEM ALTERAÇÕES
+- Regras financeiras, banco Supabase, autenticação, integrações, importações,
+  relatórios, cálculos, automações e dados.
+- Envio Zoho continua desativado, como na versão anterior.
+
+INSTALAÇÃO
+1. Faça backup dos arquivos atuais do GitHub.
+2. Extraia este ZIP e envie seu conteúdo para a RAIZ do repositório HsnFinanceiro.
+3. Substitua arquivos de mesmo nome e inclua css/premium.css e js/premium-ui.js.
+4. Aguarde a publicação do GitHub Pages e recarregue com Ctrl+Shift+R.
+5. Confira login, navegação, filtros, importação, cobranças e tema antes do uso normal.
+
+VALIDAÇÃO
+- Comparação de arquivos: os arquivos de regras de negócio permanecem idênticos.
+- Teste de sintaxe JavaScript estático e integridade do ZIP.
+- Teste funcional conectado ao Supabase/Zoho NÃO realizado neste ambiente.
