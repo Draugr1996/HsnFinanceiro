@@ -68,32 +68,36 @@ function render(){
  panel.append(node('p','O envio de e-mails permanece desativado. Antes de cobrar, confirme no Sicoob se o boleto continua em aberto.','sicoob-notice'));
  const count=node('div',undefined,'sicoob-table-heading');
  count.append(node('h2','Boletos importados'),node('span',`${items.length} título(s) · ${selected.size} selecionado(s)`));panel.append(count);
- const table=node('table',undefined,'sicoob-table'),thead=node('thead'),head=node('tr');
- ['Selecionar','Sacado / empresa','Nosso número','Vencimento','Valor','E-mail do destinatário','Situação','Ações'].forEach(t=>head.append(node('th',t)));
- thead.append(head);table.append(thead);const body=node('tbody');
+ const cards=node('div',undefined,'sicoob-cards');
  const term=clean($('search').value);
  const visible=items.filter(x=>clean(x.company+' '+x.reference).includes(term));
  for(const r of visible){
-  const tr=node('tr'),td=(label)=>{const el=node('td');el.dataset.label=label;return el;};
-  let cell=td('Selecionar'),cb=node('input');cb.type='checkbox';cb.setAttribute('aria-label',`Selecionar boleto ${r.reference}`);
+  const card=node('article',undefined,'sicoob-card');
+  const cb=node('input');cb.type='checkbox';cb.className='sicoob-card-check';cb.setAttribute('aria-label',`Selecionar boleto ${r.reference}`);
   cb.checked=selected.has(r.id);cb.disabled=!eligible(r);
-  cb.onchange=()=>{if(cb.checked)selected.add(r.id);else selected.delete(r.id);render();};cell.append(cb);tr.append(cell);
-  const vals=[['Sacado / empresa',r.company],['Nosso número',r.reference],['Vencimento',r.due_date.split('-').reverse().join('/')],['Valor',fmt(r.amount)]];
-  for(const [label,value] of vals){cell=td(label);cell.textContent=value;if(label==='Valor')cell.classList.add('sicoob-money');tr.append(cell);}
-  cell=td('E-mail do destinatário');const group=node('div',undefined,'sicoob-email-group');
-  const email=node('input');email.type='email';email.placeholder='email@empresa.com';email.value=contact(r.company)?.email||'';
+  cb.onchange=()=>{if(cb.checked)selected.add(r.id);else selected.delete(r.id);render();};
+  const company=node('div',undefined,'sicoob-card-company');
+  company.append(node('strong',r.company),node('span',`Nosso número: ${r.reference}`));
+  const identity=node('div',undefined,'sicoob-card-identity');identity.append(cb,company);
+  const details=node('div',undefined,'sicoob-card-details');
+  const field=(label,value,cls='')=>{const el=node('div',undefined,'sicoob-card-field '+cls);el.append(node('span',label),node('strong',value));return el;};
+  details.append(field('Vencimento',r.due_date.split('-').reverse().join('/'),'sicoob-card-due'),field('Valor',fmt(r.amount),'sicoob-card-amount'));
+  const status=field('Situação',r.status==='paid'?'Pago':r.status==='sent'?'Cobrado':'Pendente','sicoob-card-state');
+  status.classList.add('sicoob-state-'+r.status);details.append(status);
+  const emailRow=node('div',undefined,'sicoob-card-email');
+  const email=node('input');email.type='email';email.placeholder='E-mail da empresa';email.value=contact(r.company)?.email||'';
   email.setAttribute('aria-label',`E-mail de ${r.company}`);
-  const save=button('Salvar',async()=>{try{await saveContact(r.company,email.value.trim());}catch(e){alert(e.message);}});
-  group.append(email,save);cell.append(group);tr.append(cell);
-  cell=td('Situação');cell.append(node('span',r.status==='paid'?'Pago':r.status==='sent'?'Cobrado':'Pendente',`sicoob-status sicoob-${r.status}`));tr.append(cell);
-  cell=td('Ações');const actions=node('div',undefined,'sicoob-row-actions');
-  actions.append(button('Ver mensagem',()=>alert(`Assunto: Hotel Serra Negra | Aviso de pendência financeira – Boleto nº ${r.reference}\n\n${message(r)}`)),button(r.status==='paid'?'Reabrir':'Marcar pago',()=>setStatus(r,r.status==='paid'?'pending':'paid')));
-  cell.append(actions);tr.append(cell);body.append(tr);
+  const save=button('Salvar e-mail',async()=>{try{await saveContact(r.company,email.value.trim());}catch(e){alert(e.message);}});
+  emailRow.append(email,save);
+  const actions=node('div',undefined,'sicoob-card-actions');
+  const preview=button('✉ Ver e-mail',()=>alert(`Assunto: Hotel Serra Negra | Aviso de pendência financeira – Boleto nº ${r.reference}\n\n${message(r)}`));
+  preview.classList.add('sicoob-card-preview');
+  const change=button(r.status==='paid'?'Reabrir boleto':'Marcar pago',()=>setStatus(r,r.status==='paid'?'pending':'paid'));
+  change.classList.add('secondary');actions.append(preview,change);
+  card.append(identity,details,emailRow,actions);cards.append(card);
  }
- table.append(body);const wrap=node('div',undefined,'sicoob-table-wrap');
- if(!visible.length)wrap.append(node('p','Nenhum boleto encontrado para a pesquisa.','sicoob-empty'));
- else wrap.append(table);
- panel.append(wrap);box.append(panel);
+ if(!visible.length)cards.append(node('p','Nenhum boleto encontrado para a pesquisa.','sicoob-empty'));
+ panel.append(cards);box.append(panel);
 }
 
 return {load,render,parseCsv:parse};})();
