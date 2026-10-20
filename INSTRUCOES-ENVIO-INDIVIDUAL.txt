@@ -1,1 +1,7 @@
-Financeiro HSN Executive 3.0 — Etapa de conferência do envio individual\n\nNesta versão o botão Conferir envio individual executa duas confirmações, mas NÃO envia e-mails, não altera status nem cria registros de disparo.\n\nPróxima etapa: implementar e validar a função zoho-send-mail de produção, com bloqueio de duplicidade e tratamento de falhas incertas.\n\nPara publicar: enviar o conteúdo extraído para a raiz do repositório GitHub Pages, mantendo a estrutura de pastas.\n
+Financeiro HSN - conferencia individual validada pelo Supabase
+
+A funcao Edge zoho-send-mail deve estar publicada com a operacao mode=preview.
+O botao Conferir envio individual chama a funcao, exibe duas confirmacoes e NAO envia emails.
+O envio em lote permanece bloqueado. Nenhum status e alterado pela conferencia.
+
+Para atualizar o GitHub, envie os arquivos e pastas contidos neste ZIP para a raiz do repositorio, preservando os caminhos.

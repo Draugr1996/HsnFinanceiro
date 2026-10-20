@@ -40,18 +40,27 @@ async function importCsv(file){if(!file)return;try{const text=await file.text();
 async function setStatus(r,status){if(!confirm(`Alterar ${r.company} / ${r.reference} para ${status==='paid'?'pago':'pendente'}? Confira a situação no Sicoob.`))return;try{check(await db.from('sicoob_collections').update({status}).eq('id',r.id));await fetchData();render();}catch(e){alert(e.message);}}
 async function prepareIndividual(r){
  if(busy)return;
- if(r.status!=='pending'){alert('Este boleto não está pendente.');return;}
- const recipients=emailsFor(contact(r.company));
- if(!recipients.length||recipients.some(x=>!validEmail(x))){alert('Cadastre e salve os destinatários antes de continuar.');return;}
- if(!docNumber(r)){alert('Número do Documento não informado. Reimporte o relatório do Sicoob.');return;}
- if(!eligible(r)){alert('Este boleto ainda não está elegível. Confira o vencimento e a situação no Sicoob.');return;}
- const {data:dispatch,error:dispatchError}=await db.from('sicoob_collection_dispatches').select('status').eq('collection_id',r.id).maybeSingle();
- if(dispatchError){alert('Não foi possível verificar o histórico de envios. Operação bloqueada.');return;}
- if(dispatch){alert('Já existe um registro de envio para este boleto ('+dispatch.status+'). Verifique o histórico antes de prosseguir.');return;}
- const preview=`EMPRESA: ${r.company}\nDOCUMENTO: ${docNumber(r)}\nVENCIMENTO: ${r.due_date.split('-').reverse().join('/')}\nVALOR: ${fmt(r.amount)}\nPARA: ${recipients[0]}\nCC: ${recipients.slice(1).join('; ')||'(nenhum)'}\n\nASSUNTO: Hotel Serra Negra | Aviso de pendência financeira – Boleto nº ${docNumber(r)}\n\n${message(r)}`;
- if(!confirm('PRIMEIRA CONFERÊNCIA — leia os dados da cobrança:\n\n'+preview+'\n\nProsseguir para a confirmação final?'))return;
- if(!confirm('SEGUNDA CONFIRMAÇÃO\n\nVocê revisou a pendência no Sicoob e os destinatários?\n\nNesta versão de preparação NENHUM e-mail será enviado. Deseja concluir a conferência?'))return;
- alert('Conferência concluída. O envio real permanece bloqueado até a instalação e validação da função segura no Supabase. Nenhum e-mail foi enviado e nenhum status foi alterado.');
+ busy=true;
+ try{
+  if(!eligible(r)){alert('Este boleto não está elegível. Confira vencimento, situação, Número do Documento e destinatários salvos.');return;}
+  // A conferência é feita no servidor; dados locais não autorizam envios.
+  const {data,error}=await db.functions.invoke('zoho-send-mail',{
+   body:{mode:'preview',collection_id:r.id}
+  });
+  if(error){
+   let detail='';
+   try{detail=(await error.context?.json())?.error||'';}catch(_e){}
+   throw Error(detail||error.message||'Falha na conferência do Supabase.');
+  }
+  if(!data?.success||data.mode!=='preview'||data.sending_enabled!==false){
+   throw Error(data?.error||'Resposta inesperada. Operação bloqueada.');
+  }
+  const preview=`EMPRESA: ${data.company}\nDOCUMENTO: ${data.document_number}\nVENCIMENTO: ${String(data.due_date).split('-').reverse().join('/')}\nVALOR: ${fmt(data.amount)}\nPARA: ${data.to}\nCC: ${(data.cc||[]).join('; ')||'(nenhum)'}\n\nASSUNTO: ${data.subject}\n\n${data.content}`;
+  if(!confirm('PRIMEIRA CONFERÊNCIA — dados validados pelo Supabase:\n\n'+preview+'\n\nProsseguir para a confirmação final?'))return;
+  if(!confirm('SEGUNDA CONFIRMAÇÃO\n\nVocê revisou a pendência no Sicoob e os destinatários?\n\nNENHUM e-mail será enviado. Deseja concluir a conferência?'))return;
+  alert('Conferência concluída e validada pelo Supabase. Nenhum e-mail foi enviado e nenhum status foi alterado.');
+ }catch(e){alert('Não foi possível concluir a conferência: '+(e?.message||String(e)));}
+ finally{busy=false;}
 }
 async function sendBatch(){alert('Envio em lote bloqueado nesta etapa. Vamos validar primeiro o envio individual.');}
 function render(){
