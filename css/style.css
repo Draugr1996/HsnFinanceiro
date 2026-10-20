@@ -49,3 +49,6 @@ dialog h2{font-size:21px}.checklist-panel label{font-size:15px}.check-grid label
 .audit-details td { white-space:pre-wrap; overflow-wrap:anywhere; max-width:340px; vertical-align:top; }
 #phase5-export-progress { font-size:15px; font-weight:600; }
 @media (max-width:700px) { .audit-details td { max-width:none; } }
+
+/* Cobranças Sicoob */
+.sicoob-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}.sicoob-actions label{display:flex;flex-direction:column;gap:6px}.sicoob-table-wrap{overflow-x:auto}.sicoob-table{width:100%;border-collapse:collapse;font-size:13px}.sicoob-table th,.sicoob-table td{padding:10px;border-bottom:1px solid var(--border,#d5dce4);text-align:left}.sicoob-table td input[type=email]{max-width:210px}.sicoob-table td button{margin:2px}.sicoob-table th{white-space:nowrap}

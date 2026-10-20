@@ -1,0 +1,10 @@
+FINANCEIRO HSN — COBRANÇAS SICOOB
+
+1. Publique o CONTEÚDO desta pasta na raiz do repositório HsnFinanceiro.
+2. Abra Sistema > Cobranças Sicoob.
+3. Importe o CSV do relatório Títulos por Período do Sicoob. O importador lê páginas com posições de coluna diferentes.
+4. Salve os e-mails das empresas; confira os boletos e visualize a mensagem individual.
+5. O botão de envio fica DESATIVADO até a função segura de envio ser implementada e validada. A função zoho-send-mail atualmente só identifica a conta remetente e NÃO envia e-mails.
+6. O módulo usa tabelas sicoob_collections e sicoob_contacts já criadas no Supabase.
+7. O sistema não verifica automaticamente pagamentos recentes no banco: confira no Sicoob antes de cobrar.
+8. Não publique tokens nem chaves secretas no GitHub.
