@@ -28,6 +28,35 @@ function show(){
       location.assign(data.url);
     }catch(error){status.textContent='Falha: '+error.message;btn.disabled=false;}
   };card.append(btn);
+  const identify=document.createElement('button');
+  identify.type='button';
+  identify.className='secondary';
+  identify.textContent='Identificar conta Zoho';
+  identify.style.marginLeft='0.5rem';
+  identify.onclick=async()=>{
+    identify.disabled=true;
+    status.textContent='Consultando conta remetente no Zoho…';
+    try{
+      const client=root.HSN_ZOHO_CLIENT;
+      if(!client)throw Error('Conexão com Supabase indisponível. Atualize a página.');
+      const {data:sessionData,error:sessionError}=await client.auth.getSession();
+      if(sessionError||!sessionData.session?.access_token)throw Error('Faça login novamente no Financeiro HSN.');
+      const {data,error}=await client.functions.invoke('zoho-send-mail',{
+        method:'POST',
+        headers:{Authorization:'Bearer '+sessionData.session.access_token},
+        body:{action:'identify_account'}
+      });
+      if(error){
+        let detail='';
+        try{const response=error.context;if(response?.json){const body=await response.json();detail=body?.error||'';}}catch(_){}
+        throw Error(detail||error.message||'Falha na consulta ao Zoho.');
+      }
+      if(!data?.success||!data?.account_configured)throw Error(data?.error||'A conta remetente não foi identificada.');
+      status.textContent='Conta remetente identificada e salva: '+(data.sender||'faturamento@hotelserranegra.com.br')+'. Nenhum e-mail foi enviado.';
+    }catch(error){status.textContent='Não foi possível identificar a conta: '+(error?.message||'erro desconhecido');}
+    finally{identify.disabled=false;}
+  };
+  card.append(identify);
   const note=document.createElement('p');note.className='muted';note.textContent='Nenhuma cobrança será enviada sem a etapa posterior de revisão e confirmação.';card.append(note);
   wrap.append(card);
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='zoho_connect'));
