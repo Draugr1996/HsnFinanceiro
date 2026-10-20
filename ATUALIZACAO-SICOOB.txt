@@ -1,0 +1,14 @@
+FINANCEIRO HSN — COBRANÇAS SICOOB (PARA + CC + NÚMERO DO DOCUMENTO)
+
+O que mudou:
+- Campos Para e CC por empresa, com salvamento dos destinatários.
+- Endereços adicionais em CC separados por ponto e vírgula.
+- Número do Documento no assunto, no corpo e no cartão; Nosso Número apenas para controle interno.
+- Importação reconhece Seu Número ou Número do Documento e atualiza o documento dos boletos já cadastrados, preservando o status.
+- Envio permanece DESATIVADO, aguardando função segura e testes.
+
+Não precisa executar SQL: os destinatários ficam no campo email já existente, separados por ponto e vírgula.
+
+INSTALAÇÃO: extraia o ZIP e envie index.html e pastas js e css (e demais arquivos do pacote) à raiz do repositório GitHub Pages. Faça commit. Reabra o app e force atualização com Ctrl+Shift+R.
+
+IMPORTANTE: Para preencher o Número do Documento nos títulos antigos, importe novamente o relatório CSV que contenha a coluna Seu Número / Número do Documento.

@@ -14,14 +14,14 @@ function parse(rows){
   const heads=r.map(clean);
   if(heads.some(v=>v==='sacado')&&heads.some(v=>v.includes('vencimento'))){
    const ix=s=>heads.findIndex(v=>v.includes(s));
-   cols={name:ix('sacado'),our:ix('nosso numero'),your:ix('seu numero'),due:ix('vencimento'),amount:ix('valor')};
-   if(Object.values(cols).some(v=>v<0))throw Error('Cabeçalho incompleto.');
+   cols={name:ix('sacado'),our:ix('nosso numero'),your:heads.findIndex(v=>v.includes('numero do documento')||v.includes('numero documento')||v.includes('seu numero')),due:ix('vencimento'),amount:ix('valor')};
+   if([cols.name,cols.our,cols.due,cols.amount].some(v=>v<0))throw Error('Cabeçalho incompleto.');
    continue;
   }
   if(!cols)continue;
   const company=String(r[cols.name]||'').trim(),reference=String(r[cols.our]||'').trim(),date=iso(r[cols.due]),value=money(r[cols.amount]);
   if(!company||!reference||!date||!Number.isFinite(value)||value<=0)continue;
-  parsed.push({company,reference,external_reference:String(r[cols.your]||'').trim(),due_date:date,amount:value});
+  parsed.push({company,reference,external_reference:cols.your>=0?String(r[cols.your]||'').trim():'',due_date:date,amount:value});
  }
  if(!cols)throw Error('Cabeçalho Sicoob não encontrado.');
  return [...new Map(parsed.map(x=>[x.reference+'|'+x.due_date,x])).values()];
@@ -30,10 +30,13 @@ function check(x){if(x.error)throw x.error;return x.data;}
 async function fetchData(){const [a,b]=await Promise.all([db.from('sicoob_collections').select('*').order('due_date',{ascending:true}),db.from('sicoob_contacts').select('*')]);items=check(a)||[];contacts=check(b)||[];ready=true;}
 async function load(){if(!user)return;try{await fetchData();render();}catch(e){ready=false;render();$('records').prepend(node('p','Não foi possível carregar as cobranças. Verifique as tabelas do Supabase. '+e.message,'hint'));}}
 function contact(company){return contacts.find(c=>clean(c.company)===clean(company));}
-function message(r){return `Prezados, bom dia!\n\nIdentificamos em nosso controle financeiro uma pendência referente ao boleto abaixo:\n\nEmpresa: ${r.company}\nBoleto: ${r.reference}\nVencimento: ${r.due_date.split('-').reverse().join('/')}\nValor original: ${fmt(r.amount)}\n\nSolicitamos, por gentileza, a verificação da pendência e, caso o pagamento já tenha sido realizado, o envio do respectivo comprovante para atualização de nossos registros.\n\nPermanecemos à disposição para quaisquer esclarecimentos.\n\nAtenciosamente,\nVanderson Santos\nSupervisor Administrativo Financeiro\nHotel Serra Negra\nfaturamento@hotelserranegra.com.br`;}
-const eligible=r=>r.status==='pending'&&!!contact(r.company)?.email&&r.due_date<new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
-async function saveContact(company,email){if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('E-mail inválido.');check(await db.from('sicoob_contacts').upsert({owner_id:user.id,company,email},{onConflict:'owner_id,company'}));await fetchData();render();}
-async function importCsv(file){if(!file)return;try{const text=await file.text();const parsed=parse(csv(text.replace(/^\uFEFF/,'')));if(!parsed.length)throw Error('Nenhum boleto reconhecido.');const ok=confirm(`Foram encontrados ${parsed.length} títulos, totalizando ${fmt(parsed.reduce((s,r)=>s+r.amount,0))}.\n\nImportar e atualizar títulos existentes? Os status atuais serão preservados.`);if(!ok)return;const existing=new Set(items.map(x=>x.reference+'|'+x.due_date));const fresh=parsed.filter(x=>!existing.has(x.reference+'|'+x.due_date));if(fresh.length)check(await db.from('sicoob_collections').upsert(fresh.map(x=>({...x,owner_id:user.id,status:'pending'})),{onConflict:'owner_id,reference,due_date'}));await fetchData();render();alert(`${fresh.length} títulos novos importados. ${parsed.length-fresh.length} já estavam cadastrados e foram preservados.`);}catch(e){alert('Falha na importação: '+e.message);}}
+const docNumber=r=>String(r.external_reference||'').trim();
+const emailsFor=c=>String(c?.email||'').split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean);
+const validEmail=x=>/^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/.test(x);
+function message(r){return `Prezados, bom dia!\n\nIdentificamos em nosso controle financeiro uma pendência referente ao boleto abaixo:\n\nEmpresa: ${r.company}\nNúmero do Documento: ${docNumber(r)||'[NÃO INFORMADO]'}\nVencimento: ${r.due_date.split('-').reverse().join('/')}\nValor original: ${fmt(r.amount)}\n\nSolicitamos, por gentileza, a verificação da pendência e, caso o pagamento já tenha sido realizado, o envio do respectivo comprovante para atualização de nossos registros.\n\nPermanecemos à disposição para quaisquer esclarecimentos.\n\nAtenciosamente,\nVanderson Santos\nSupervisor Administrativo Financeiro\nHotel Serra Negra\nfaturamento@hotelserranegra.com.br`;}
+const eligible=r=>r.status==='pending'&&emailsFor(contact(r.company)).length>0&&!!docNumber(r)&&r.due_date<new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+async function saveContact(company,primary,cc){const all=[primary.trim(),...cc.split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean)];if(!all[0]||all.some(x=>!validEmail(x)))throw Error('Confira os endereços de e-mail em Para e CC.');if(new Set(all.map(x=>x.toLowerCase())).size!==all.length)throw Error('Há e-mails repetidos entre Para e CC.');check(await db.from('sicoob_contacts').upsert({owner_id:user.id,company,email:all.join('; ')},{onConflict:'owner_id,company'}));await fetchData();render();}
+async function importCsv(file){if(!file)return;try{const text=await file.text();const parsed=parse(csv(text.replace(/^\uFEFF/,'')));if(!parsed.length)throw Error('Nenhum boleto reconhecido.');const ok=confirm(`Foram encontrados ${parsed.length} títulos, totalizando ${fmt(parsed.reduce((s,r)=>s+r.amount,0))}.\n\nImportar e atualizar títulos existentes? Os status atuais serão preservados.`);if(!ok)return;const existing=new Set(items.map(x=>x.reference+'|'+x.due_date));const fresh=parsed.filter(x=>!existing.has(x.reference+'|'+x.due_date));const updates=parsed.filter(x=>existing.has(x.reference+'|'+x.due_date)&&x.external_reference&&x.external_reference!==items.find(y=>y.reference===x.reference&&y.due_date===x.due_date)?.external_reference);if(updates.length){for(const x of updates){const old=items.find(y=>y.reference===x.reference&&y.due_date===x.due_date);check(await db.from('sicoob_collections').update({external_reference:x.external_reference}).eq('id',old.id));}}if(fresh.length)check(await db.from('sicoob_collections').upsert(fresh.map(x=>({...x,owner_id:user.id,status:'pending'})),{onConflict:'owner_id,reference,due_date'}));await fetchData();render();alert(`${fresh.length} títulos novos importados. ${parsed.length-fresh.length} já cadastrados; ${updates.length} número(s) de documento atualizado(s), sem alterar a situação dos boletos.`);}catch(e){alert('Falha na importação: '+e.message);}}
 async function setStatus(r,status){if(!confirm(`Alterar ${r.company} / ${r.reference} para ${status==='paid'?'pago':'pendente'}? Confira a situação no Sicoob.`))return;try{check(await db.from('sicoob_collections').update({status}).eq('id',r.id));await fetchData();render();}catch(e){alert(e.message);}}
 async function sendBatch(){alert('Envio bloqueado nesta versão: falta instalar e validar a função segura de envio de cobranças no Supabase. Os boletos e destinatários podem ser preparados e revisados sem disparar e-mails.');}
 function render(){
@@ -52,7 +55,7 @@ function render(){
   stat('Títulos pendentes',String(pending.length),'Aguardando conferência'),
   stat('Valor pendente',fmt(pending.reduce((s,r)=>s+Number(r.amount),0)),'Valor original dos títulos'),
   stat('Empresas',String(new Set(pending.map(r=>clean(r.company))).size),'Sacados com pendências'),
-  stat('E-mails cadastrados',String(pending.filter(r=>!!contact(r.company)?.email).length),'Títulos com destinatário')
+  stat('E-mails cadastrados',String(pending.filter(r=>emailsFor(contact(r.company)).length>0).length),'Títulos com destinatário')
  );
  const panel=node('section',undefined,'sicoob-panel');
  const bar=node('div',undefined,'sicoob-actions');
@@ -70,30 +73,36 @@ function render(){
  count.append(node('h2','Boletos importados'),node('span',`${items.length} título(s) · ${selected.size} selecionado(s)`));panel.append(count);
  const cards=node('div',undefined,'sicoob-cards');
  const term=clean($('search').value);
- const visible=items.filter(x=>clean(x.company+' '+x.reference).includes(term));
+ const visible=items.filter(x=>clean(x.company+' '+x.reference+' '+(x.external_reference||'')).includes(term));
  for(const r of visible){
   const card=node('article',undefined,'sicoob-card');
   const cb=node('input');cb.type='checkbox';cb.className='sicoob-card-check';cb.setAttribute('aria-label',`Selecionar boleto ${r.reference}`);
   cb.checked=selected.has(r.id);cb.disabled=!eligible(r);
   cb.onchange=()=>{if(cb.checked)selected.add(r.id);else selected.delete(r.id);render();};
   const company=node('div',undefined,'sicoob-card-company');
-  company.append(node('strong',r.company),node('span',`Nosso número: ${r.reference}`));
+  company.append(node('strong',r.company),node('span',`Número do Documento: ${docNumber(r)||'Não informado'}`),node('small',`Nosso número (controle interno): ${r.reference}`));
   const identity=node('div',undefined,'sicoob-card-identity');identity.append(cb,company);
   const details=node('div',undefined,'sicoob-card-details');
   const field=(label,value,cls='')=>{const el=node('div',undefined,'sicoob-card-field '+cls);el.append(node('span',label),node('strong',value));return el;};
   details.append(field('Vencimento',r.due_date.split('-').reverse().join('/'),'sicoob-card-due'),field('Valor',fmt(r.amount),'sicoob-card-amount'));
   const status=field('Situação',r.status==='paid'?'Pago':r.status==='sent'?'Cobrado':'Pendente','sicoob-card-state');
   status.classList.add('sicoob-state-'+r.status);details.append(status);
-  const emailRow=node('div',undefined,'sicoob-card-email');
-  const email=node('input');email.type='email';email.placeholder='E-mail da empresa';email.value=contact(r.company)?.email||'';
-  email.setAttribute('aria-label',`E-mail de ${r.company}`);
-  const save=button('Salvar e-mail',async()=>{try{await saveContact(r.company,email.value.trim());}catch(e){alert(e.message);}});
-  emailRow.append(email,save);
+  const emailRow=node('div',undefined,'sicoob-card-email sicoob-email-multi');
+  const savedEmails=emailsFor(contact(r.company));
+  const toLabel=node('label',undefined,'sicoob-email-field');toLabel.append(node('span','Para · e-mail principal'));
+  const email=node('input');email.type='email';email.placeholder='financeiro@empresa.com.br';email.value=savedEmails[0]||'';
+  email.setAttribute('aria-label',`E-mail principal de ${r.company}`);toLabel.append(email);
+  const ccLabel=node('label',undefined,'sicoob-email-field');ccLabel.append(node('span','CC · e-mails adicionais (separados por ponto e vírgula)'));
+  const cc=node('textarea');cc.rows=2;cc.placeholder='contasapagar@empresa.com.br; outro@empresa.com.br';cc.value=savedEmails.slice(1).join('; ');
+  cc.setAttribute('aria-label',`E-mails em cópia de ${r.company}`);ccLabel.append(cc);
+  const save=button('Salvar destinatários',async()=>{try{await saveContact(r.company,email.value,cc.value);}catch(e){alert(e.message);}});
+  emailRow.append(toLabel,ccLabel,save);
   const actions=node('div',undefined,'sicoob-card-actions');
-  const preview=button('✉ Ver e-mail',()=>alert(`Assunto: Hotel Serra Negra | Aviso de pendência financeira – Boleto nº ${r.reference}\n\n${message(r)}`));
+  const preview=button('✉ Ver e-mail',()=>{const recipients=emailsFor(contact(r.company));alert(`Para: ${recipients[0]||'(não cadastrado)'}\nCC: ${recipients.slice(1).join('; ')||'(nenhum)'}\nAssunto: Hotel Serra Negra | Aviso de pendência financeira – Boleto nº ${docNumber(r)||'[NÃO INFORMADO]'}\n\n${message(r)}`);});
   preview.classList.add('sicoob-card-preview');
   const change=button(r.status==='paid'?'Reabrir boleto':'Marcar pago',()=>setStatus(r,r.status==='paid'?'pending':'paid'));
   change.classList.add('secondary');actions.append(preview,change);
+  if(!docNumber(r))card.append(node('p','Número do Documento ausente: reimporte o CSV com a coluna “Seu Número” ou “Número do Documento” antes de enviar.','sicoob-notice'));
   card.append(identity,details,emailRow,actions);cards.append(card);
  }
  if(!visible.length)cards.append(node('p','Nenhum boleto encontrado para a pesquisa.','sicoob-empty'));
