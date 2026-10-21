@@ -1,6 +1,6 @@
 /* Cobranças Sicoob: conferência humana obrigatória. Sem credenciais Zoho no navegador. */
 window.HSN_SICOOB=(()=>{'use strict';
-let items=[], contacts=[], dispatches=[], historyError="", ready=false, busy=false, selected=new Set();
+let items=[], contacts=[], dispatches=[], historyError="", ready=false, busy=false, selected=new Set(), activeTab="pending";
 const $=id=>document.getElementById(id), node=(tag,txt,cls)=>{const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;if(cls)e.className=cls;return e;};
 const button=(txt,fn)=>{const b=node('button',txt,'secondary');b.type='button';b.onclick=fn;return b;};
 const fmt=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -90,7 +90,7 @@ function installHistoryStyle(){
  if(document.getElementById('hsn-sicoob-history-css'))return;
  const style=node('style');style.id='hsn-sicoob-history-css';
  style.textContent=`
- .sicoob-history{margin-top:18px;padding:16px;border:1px solid rgba(148,163,184,.24);border-radius:16px;background:rgba(20,36,58,.38)}
+ .sicoob-history{margin-top:0;padding:16px;border:1px solid rgba(148,163,184,.24);border-radius:16px;background:rgba(20,36,58,.38)}
  .sicoob-history-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
  .sicoob-history-head h2{margin:0;font-size:1.05rem}
  .sicoob-history-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -106,6 +106,12 @@ function installHistoryStyle(){
  .sicoob-history-state.processing{color:#facc15;background:rgba(234,179,8,.12)}
  .sicoob-history-state.failed{color:#fb9292;background:rgba(239,68,68,.12)}
  .sicoob-history-info{font-size:.8rem;opacity:.75;margin:8px 0 0}
+ .sicoob-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px}
+ .sicoob-tab{border:1px solid rgba(148,163,184,.28);background:rgba(148,163,184,.07);border-radius:11px;padding:10px 15px;color:inherit;font-weight:650;cursor:pointer}
+ .sicoob-tab.active{border-color:#f97316;background:rgba(249,115,22,.15);color:#fdba74}
+ .sicoob-tab:focus-visible{outline:2px solid #fdba74;outline-offset:2px}
+ .sicoob-history{border-color:rgba(249,115,22,.42);background:rgba(20,36,58,.58)}
+ @media(max-width:650px){.sicoob-history-tools{width:100%}.sicoob-history-tools input{width:100%}.sicoob-tab{flex:1}}
  `;
  document.head.append(style);
 }
@@ -178,6 +184,17 @@ function render(){
   stat('Empresas',String(new Set(pending.map(r=>clean(r.company))).size),'Sacados com pendências'),
   stat('E-mails cadastrados',String(pending.filter(r=>emailsFor(contact(r.company)).length>0).length),'Títulos com destinatário')
  );
+ // O histórico fica no início, antes dos cartões, para dispensar rolagem longa.
+ renderHistory(box);
+ const tabs=node('nav',undefined,'sicoob-tabs');tabs.setAttribute('aria-label','Filtrar boletos por situação');
+ for(const [key,label] of [['pending','Pendentes'],['sent','Cobrados'],['paid','Pagos']]){
+  const total=items.filter(r=>r.status===key).length;
+  const tab=button(`${label} (${total})`,()=>{activeTab=key;render();});
+  tab.className='sicoob-tab'+(activeTab===key?' active':'');
+  tab.setAttribute('aria-pressed',String(activeTab===key));
+  tabs.append(tab);
+ }
+ box.append(tabs);
  const panel=node('section',undefined,'sicoob-panel');
  const bar=node('div',undefined,'sicoob-actions');
  const importLabel=node('label',undefined,'sicoob-import');
@@ -191,10 +208,10 @@ function render(){
  panel.append(bar);
  panel.append(node('p','Envio individual disponível: confira o boleto e os destinatários. Após duas confirmações, o e-mail será enviado pelo Zoho. Envio em lote continua desativado.','sicoob-notice'));
  const count=node('div',undefined,'sicoob-table-heading');
- count.append(node('h2','Boletos importados'),node('span',`${items.length} título(s) · ${selected.size} selecionado(s)`));panel.append(count);
+ count.append(node('h2',activeTab==='pending'?'Boletos pendentes':activeTab==='sent'?'Boletos cobrados':'Boletos pagos'),node('span',`${items.filter(r=>r.status===activeTab).length} título(s) nesta aba · ${selected.size} selecionado(s)`));panel.append(count);
  const cards=node('div',undefined,'sicoob-cards');
  const term=clean($('search').value);
- const visible=items.filter(x=>clean(x.company+' '+x.reference+' '+(x.external_reference||'')).includes(term));
+ const visible=items.filter(x=>x.status===activeTab&&clean(x.company+' '+x.reference+' '+(x.external_reference||'')).includes(term));
  for(const r of visible){
   const card=node('article',undefined,'sicoob-card');
   const cb=node('input');cb.type='checkbox';cb.className='sicoob-card-check';cb.setAttribute('aria-label',`Selecionar boleto ${r.reference}`);
@@ -228,7 +245,7 @@ function render(){
   card.append(identity,details,emailRow,actions);cards.append(card);
  }
  if(!visible.length)cards.append(node('p','Nenhum boleto encontrado para a pesquisa.','sicoob-empty'));
- panel.append(cards);box.append(panel);renderHistory(box);
+ panel.append(cards);box.append(panel);
 }
 
 return {load,render,parseCsv:parse};})();
