@@ -56,9 +56,16 @@ async function prepareIndividual(r){
    throw Error(data?.error||'Resposta inesperada. Operação bloqueada.');
   }
   const preview=`EMPRESA: ${data.company}\nDOCUMENTO: ${data.document_number}\nVENCIMENTO: ${String(data.due_date).split('-').reverse().join('/')}\nVALOR: ${fmt(data.amount)}\nPARA: ${data.to}\nCC: ${(data.cc||[]).join('; ')||'(nenhum)'}\n\nASSUNTO: ${data.subject}\n\n${data.content}`;
-  if(!confirm('PRIMEIRA CONFERÊNCIA — dados validados pelo Supabase:\n\n'+preview+'\n\nProsseguir para a confirmação final?'))return;
-  if(!confirm('SEGUNDA CONFIRMAÇÃO\n\nVocê revisou a pendência no Sicoob e os destinatários?\n\nNENHUM e-mail será enviado. Deseja concluir a conferência?'))return;
-  alert('Conferência concluída e validada pelo Supabase. Nenhum e-mail foi enviado e nenhum status foi alterado.');
+   if(!data.approval_token)throw Error('Supabase não retornou autorização de envio.');
+   if(!confirm('PRIMEIRA CONFERÊNCIA — dados validados pelo Supabase:\n\n'+preview+'\n\nProsseguir para a confirmação final?'))return;
+   if(!confirm('SEGUNDA CONFIRMAÇÃO — ENVIO REAL\n\nO Zoho enviará AGORA esta cobrança para '+data.to+(data.cc?.length?' (CC: '+data.cc.join('; ')+')':'')+'.\n\nVocê verificou a pendência no Sicoob, o número do documento e TODOS os destinatários?\n\nClique OK somente se autorizar o envio real.'))return;
+   const {data:result,error:sendError}=await db.functions.invoke('zoho-send-mail',{
+     body:{mode:'send_individual',collection_id:r.id,approval_token:data.approval_token}
+   });
+   if(sendError){let detail='';try{detail=(await sendError.context?.json())?.error||'';}catch(_e){}throw Error(detail||'Resultado incerto. Não tente reenviar sem verificar o Zoho e o histórico.');}
+   if(!result?.success)throw Error(result?.error||'Envio não confirmado. Não reenvie sem conferência.');
+   await fetchData();render();
+   alert(result.warning||'Cobrança enviada pelo Zoho e registrada no histórico.');
  }catch(e){alert('Não foi possível concluir a conferência: '+(e?.message||String(e)));}
  finally{busy=false;}
 }
@@ -92,7 +99,7 @@ function render(){
  const send=button(`Enviar selecionados (${[...selected].filter(id=>items.some(r=>r.id===id&&eligible(r))).length})`,sendBatch);
  send.disabled=true;send.title='Envio desativado até validação da função segura no Supabase';bar.append(send);
  panel.append(bar);
- panel.append(node('p',"Envio real desativado: use 'Conferir envio individual' para revisar com duas confirmações. Nenhum e-mail será disparado nesta etapa.",'sicoob-notice'));
+ panel.append(node('p','Envio individual disponível: confira o boleto e os destinatários. Após duas confirmações, o e-mail será enviado pelo Zoho. Envio em lote continua desativado.','sicoob-notice'));
  const count=node('div',undefined,'sicoob-table-heading');
  count.append(node('h2','Boletos importados'),node('span',`${items.length} título(s) · ${selected.size} selecionado(s)`));panel.append(count);
  const cards=node('div',undefined,'sicoob-cards');
@@ -124,7 +131,7 @@ function render(){
   const actions=node('div',undefined,'sicoob-card-actions');
   const preview=button('✉ Ver e-mail',()=>{const recipients=emailsFor(contact(r.company));alert(`Para: ${recipients[0]||'(não cadastrado)'}\nCC: ${recipients.slice(1).join('; ')||'(nenhum)'}\nAssunto: Hotel Serra Negra | Aviso de pendência financeira – Boleto nº ${docNumber(r)||'[NÃO INFORMADO]'}\n\n${message(r)}`);});
   preview.classList.add('sicoob-card-preview');
-  const individual=button('Conferir envio individual',()=>prepareIndividual(r));individual.disabled=!eligible(r);individual.title=individual.disabled?'Requer boleto pendente e vencido, Número do Documento e destinatários salvos':'Conferir dados com duas confirmações (sem envio real)';actions.append(individual);
+  const individual=button('Enviar cobrança individual',()=>prepareIndividual(r));individual.disabled=!eligible(r);individual.title=individual.disabled?'Requer boleto pendente e vencido, Número do Documento e destinatários salvos':'Conferir e enviar cobrança após duas confirmações';actions.append(individual);
   const change=button(r.status==='paid'?'Reabrir boleto':'Marcar pago',()=>setStatus(r,r.status==='paid'?'pending':'paid'));
   change.classList.add('secondary');actions.append(preview,change);
   if(!docNumber(r))card.append(node('p','Número do Documento ausente: reimporte o CSV com a coluna “Seu Número” ou “Número do Documento” antes de enviar.','sicoob-notice'));
