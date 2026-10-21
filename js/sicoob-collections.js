@@ -1,6 +1,6 @@
 /* Cobranças Sicoob: conferência humana obrigatória. Sem credenciais Zoho no navegador. */
 window.HSN_SICOOB=(()=>{'use strict';
-let items=[], contacts=[], ready=false, busy=false, selected=new Set();
+let items=[], contacts=[], dispatches=[], historyError="", ready=false, busy=false, selected=new Set();
 const $=id=>document.getElementById(id), node=(tag,txt,cls)=>{const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;if(cls)e.className=cls;return e;};
 const button=(txt,fn)=>{const b=node('button',txt,'secondary');b.type='button';b.onclick=fn;return b;};
 const fmt=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -27,7 +27,17 @@ function parse(rows){
  return [...new Map(parsed.map(x=>[x.reference+'|'+x.due_date,x])).values()];
 }
 function check(x){if(x.error)throw x.error;return x.data;}
-async function fetchData(){const [a,b]=await Promise.all([db.from('sicoob_collections').select('*').order('due_date',{ascending:true}),db.from('sicoob_contacts').select('*')]);items=check(a)||[];contacts=check(b)||[];ready=true;}
+async function fetchData(){
+ const [a,b,h]=await Promise.all([
+  db.from('sicoob_collections').select('*').order('due_date',{ascending:true}),
+  db.from('sicoob_contacts').select('*'),
+  db.from('sicoob_collection_dispatches').select('id,collection_id,owner_id,status,recipient_email,sent_at,created_at').eq('owner_id',user.id).order('created_at',{ascending:false}).limit(1000)
+ ]);
+ items=check(a)||[];contacts=check(b)||[];
+ if(h.error){dispatches=[];historyError='Não foi possível consultar o histórico: '+h.error.message;}
+ else{dispatches=h.data||[];historyError='';}
+ ready=true;
+}
 async function load(){if(!user)return;try{await fetchData();render();}catch(e){ready=false;render();$('records').prepend(node('p','Não foi possível carregar as cobranças. Verifique as tabelas do Supabase. '+e.message,'hint'));}}
 function contact(company){return contacts.find(c=>clean(c.company)===clean(company));}
 const docNumber=r=>String(r.external_reference||'').trim();
@@ -70,6 +80,86 @@ async function prepareIndividual(r){
  finally{busy=false;}
 }
 async function sendBatch(){alert('Envio em lote bloqueado nesta etapa. Vamos validar primeiro o envio individual.');}
+
+function historyDate(value){
+ if(!value)return '—';
+ const d=new Date(value);
+ return Number.isNaN(d.getTime())?'—':d.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function installHistoryStyle(){
+ if(document.getElementById('hsn-sicoob-history-css'))return;
+ const style=node('style');style.id='hsn-sicoob-history-css';
+ style.textContent=`
+ .sicoob-history{margin-top:18px;padding:16px;border:1px solid rgba(148,163,184,.24);border-radius:16px;background:rgba(20,36,58,.38)}
+ .sicoob-history-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+ .sicoob-history-head h2{margin:0;font-size:1.05rem}
+ .sicoob-history-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+ .sicoob-history-tools input,.sicoob-history-tools select{min-height:35px;border:1px solid rgba(148,163,184,.32);border-radius:9px;padding:7px 10px;background:var(--surface,#13243a);color:inherit;max-width:100%}
+ .sicoob-history-tools input{width:245px}
+ .sicoob-history-scroll{overflow-x:auto;width:100%}
+ .sicoob-history-table{width:100%;border-collapse:collapse;min-width:780px;font-size:.84rem}
+ .sicoob-history-table th{text-align:left;font-weight:600;opacity:.8;padding:10px 9px;border-bottom:1px solid rgba(148,163,184,.25);white-space:nowrap}
+ .sicoob-history-table td{padding:11px 9px;border-bottom:1px solid rgba(148,163,184,.14);vertical-align:top}
+ .sicoob-history-table td small{display:block;opacity:.72;margin-top:3px}
+ .sicoob-history-state{display:inline-block;border-radius:30px;padding:4px 9px;font-weight:700;font-size:.77rem;background:rgba(148,163,184,.15)}
+ .sicoob-history-state.sent{color:#42d9aa;background:rgba(16,185,129,.12)}
+ .sicoob-history-state.processing{color:#facc15;background:rgba(234,179,8,.12)}
+ .sicoob-history-state.failed{color:#fb9292;background:rgba(239,68,68,.12)}
+ .sicoob-history-info{font-size:.8rem;opacity:.75;margin:8px 0 0}
+ `;
+ document.head.append(style);
+}
+function renderHistory(parent){
+ installHistoryStyle();
+ const section=node('section',undefined,'sicoob-history');
+ const header=node('div',undefined,'sicoob-history-head');
+ const heading=node('h2','Histórico de cobranças Sicoob');
+ const controls=node('div',undefined,'sicoob-history-tools');
+ const search=node('input');search.type='search';search.placeholder='Buscar empresa, documento ou e-mail';search.setAttribute('aria-label','Pesquisar histórico de cobranças');
+ const filter=node('select');filter.setAttribute('aria-label','Filtrar situação do envio');
+ for(const [value,label] of [['','Todas as situações'],['sent','Enviadas'],['processing','Em processamento'],['failed','Falhas / verificar']]){
+  const opt=node('option',label);opt.value=value;filter.append(opt);
+ }
+ const refresh=button('Atualizar histórico',async()=>{
+  if(busy)return;
+  refresh.disabled=true;
+  try{await fetchData();render();}catch(e){alert('Falha ao atualizar histórico: '+(e?.message||e));}
+  finally{refresh.disabled=false;}
+ });
+ controls.append(search,filter,refresh);header.append(heading,controls);section.append(header);
+ const count=node('p',undefined,'sicoob-history-info');
+ const scroll=node('div',undefined,'sicoob-history-scroll');
+ section.append(count,scroll);
+ if(historyError){section.append(node('p',historyError,'sicoob-notice'));}
+ const rows=dispatches.map(d=>({...d,collection:items.find(r=>r.id===d.collection_id)}));
+ function draw(){
+  const q=clean(search.value),status=filter.value;
+  const filtered=rows.filter(d=>(!status||d.status===status)&&clean([
+   d.collection?.company,d.collection?.external_reference,d.collection?.reference,d.recipient_email
+  ].join(' ')).includes(q));
+  count.textContent=`${filtered.length} registro(s) encontrado(s) · ${rows.filter(d=>d.status==='sent').length} enviado(s) · ${rows.filter(d=>d.status==='processing').length} em processamento · ${rows.filter(d=>d.status==='failed').length} com falha`;
+  scroll.replaceChildren();
+  if(!filtered.length){scroll.append(node('p',historyError?'Histórico indisponível.':'Nenhum registro encontrado.','sicoob-history-info'));return;}
+  const table=node('table',undefined,'sicoob-history-table');
+  const thead=node('thead'),tr=node('tr');
+  for(const h of ['Empresa / Documento','Vencimento','Valor','Destinatário principal','Situação','Data / horário'])tr.append(node('th',h));
+  thead.append(tr);table.append(thead);
+  const tbody=node('tbody');
+  for(const d of filtered){
+   const r=d.collection,entry=node('tr');
+   const company=node('td');company.append(node('strong',r?.company||'Boleto não localizado'),node('small','Documento: '+(r?.external_reference||'—')));
+   entry.append(company,node('td',r?.due_date?String(r.due_date).split('-').reverse().join('/'):'—'),node('td',r?fmt(r.amount):'—'),node('td',d.recipient_email||'—'));
+   const st=node('td');const label=d.status==='sent'?'Enviado':d.status==='processing'?'Em processamento':d.status==='failed'?'Falha — verificar':d.status;
+   st.append(node('span',label,'sicoob-history-state '+d.status));entry.append(st);
+   const when=node('td');when.append(node('span',historyDate(d.sent_at||d.created_at)),node('small',d.sent_at?'Envio confirmado':'Tentativa registrada'));
+   entry.append(when);tbody.append(entry);
+  }
+  table.append(tbody);scroll.append(table);
+ }
+ search.oninput=draw;filter.onchange=draw;draw();
+ section.append(node('p','Os horários seguem Brasília. O histórico registra o destinatário principal; os e-mails em CC de envios anteriores não estão armazenados. Falhas ou tentativas em processamento devem ser verificadas antes de qualquer nova ação.','sicoob-history-info'));
+ parent.append(section);
+}
 function render(){
  if(view!=='sicoob_collections')return;
  $('view-title').textContent='Cobranças Sicoob';
@@ -138,7 +228,7 @@ function render(){
   card.append(identity,details,emailRow,actions);cards.append(card);
  }
  if(!visible.length)cards.append(node('p','Nenhum boleto encontrado para a pesquisa.','sicoob-empty'));
- panel.append(cards);box.append(panel);
+ panel.append(cards);box.append(panel);renderHistory(box);
 }
 
 return {load,render,parseCsv:parse};})();
